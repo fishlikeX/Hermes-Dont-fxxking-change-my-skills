@@ -28,7 +28,6 @@ const BUNDLES = {
     backendError: 'backend unavailable — is the Python plugin enabled and gateway running?',
     auditHead: 'recent guard activity',
     archived: 'archived',
-    palette: 'Open skill guard',
     tierHint: {
       allow: 'background review MAY edit this skill',
       auto: 'guard default: only agent-created skills are editable',
@@ -45,7 +44,6 @@ const BUNDLES = {
     backendError: '后端不可用——Python 插件启用了吗？网关在跑吗？',
     auditHead: '最近的守卫动作',
     archived: '已归档',
-    palette: '打开技能守卫',
     tierHint: {
       allow: '后台评审【可以】改这个 skill',
       auto: '守卫默认：只放行 agent 自产的 skill',
@@ -159,7 +157,7 @@ export default {
     const mount = () => ctx.registerMany([
       { id: 'page', area: ROUTES_AREA, data: { path: PATH }, render: () => jsx(Page, { ctx }) },
       { id: 'nav', area: SIDEBAR_NAV_AREA, data: { path: PATH, label: ctx.i18n.t('nav'), codicon: 'shield' } },
-      { id: 'open', area: PALETTE_AREA, data: { id: 'skill-guard.open', title: ctx.i18n.t('palette'), run: () => host.navigate(PATH) } },
+      { id: 'open', area: PALETTE_AREA, data: { id: 'skill-guard.open', title: ctx.i18n.t('nav'), run: () => host.navigate(PATH) } },
     ])
     mount()
     ctx.i18n.onLocaleChange(() => mount())
