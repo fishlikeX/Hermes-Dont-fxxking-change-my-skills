@@ -19,7 +19,7 @@ const PATH = '/skill-guard'
 
 const BUNDLES = {
   en: {
-    nav: 'Skill Guard',
+    nav: "Don't change my skills!",
     title: "Don't fxxking change my skills!",
     intro: 'Background self-improvement may only touch AGENT skills by default. Flip a row to override.',
     stats: (n, a, al, d, b) =>
@@ -150,7 +150,7 @@ function Page({ ctx }) {
 
 export default {
   id: ID,
-  name: 'Skill Guard · 别改我的技能！',
+  name: "Don't change my skills! · 别改我的技能！",
   register(ctx) {
     ctx.i18n.register(BUNDLES)
 
