@@ -1,0 +1,8 @@
+# runtime state — per-install, not source
+guard.json
+audit.log
+*.tmp
+__pycache__/
+*.pyc
+github_token.txt
+*.local.json

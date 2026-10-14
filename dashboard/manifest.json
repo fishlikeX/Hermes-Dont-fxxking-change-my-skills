@@ -1,0 +1,8 @@
+{
+  "name": "dont-change-my-skills",
+  "label": "别改我的技能！",
+  "description": "Ownership guard for the background self-improvement fork — per-skill allow/deny list.",
+  "icon": "Shield",
+  "version": "0.1.0",
+  "api": "plugin_api.py"
+}
