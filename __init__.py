@@ -7,6 +7,15 @@ extend / prune only skills Hermes herself created, unless the user flips a
 per-skill `allow`. Foreground (user-directed) content writes pass; deletion via
 skill_manage is refused for every origin (the strictest tier).
 
+Background identity is a DOUBLE signal since 0.2.0: the ``background_review``
+ContextVar OR the review worker's thread name (``bg-review`` / ``bg-review-*``).
+The ContextVar alone is unsafe: the review fork snapshots its parent context
+BEFORE the origin is written into it, so the hook can read the default
+"foreground" — a background write then slips through and bypasses even an
+explicit deny (real incident 2026-10-17: a pinned hub skill was silently patched
+with zero audit lines). Thread identity is fixed at thread creation and cannot
+drift, so either signal flagging background is treated as background.
+
 Verdict table (tier per skill, stored in guard.json):
 
     action          auto(default)              allow      deny
@@ -133,14 +142,34 @@ def _classify(skill_name: str) -> str:
 
 # ------------------------------------------------------------------ verdict
 
+def _thread_is_bg() -> bool:
+    """True when the CURRENT thread is a background-review worker.
+
+    ContextVar propagation is unreliable on this path: the review thread copies
+    the parent context BEFORE ``turn_context`` converts ``_memory_write_origin``
+    into the ContextVar, so the origin seen by the hook can stay the default
+    "foreground" and the bg write slips through unflagged (real incident
+    2026-10-17: bg review patched a pinned hub-installed skill, zero audit).
+    Thread identity is set at thread creation and cannot drift, so we treat it
+    as an equal-authority signal: either signal says bg -> treat as bg.
+    """
+    try:
+        import threading
+        name = threading.current_thread().name or ""
+        return name == "bg-review" or name.startswith("bg-review-")
+    except Exception:
+        return False
+
+
 def _decide(skill_name: str, action: str, origin: str) -> tuple[bool, str, str]:
     """(allow, tier, reason). tier is 'auto'|'allow'|'deny'; reason is audit text.
 
     Foreground: content writes pass (delete never does, decided by caller).
-    Background: guard.json tier wins; auto defers to classify().
+    Background (by origin ContextVar OR worker-thread identity): guard.json
+    tier wins; auto defers to classify().
     """
     tier = _load_guard().get(skill_name, "auto")
-    is_bg = origin == _background_sentinel()
+    is_bg = origin == _background_sentinel() or _thread_is_bg()
 
     if not is_bg:
         return True, tier, "foreground (user-directed)"
@@ -183,12 +212,14 @@ def _on_pre_tool_call(tool_name: str = "", args: Optional[dict[str, Any]] = None
 
     try:
         origin = _origin()
-        is_bg = origin == _background_sentinel()
+        thread_bg = _thread_is_bg()
+        is_bg = origin == _background_sentinel() or thread_bg
+        origin_label = origin + ("+thread" if thread_bg and origin != _background_sentinel() else "")
 
         # ---- delete: strictest tier, every origin ----
         if action == "delete":
             if is_bg:
-                _audit(f"BLOCK bg delete skill={name}")
+                _audit(f"BLOCK bg delete skill={name} origin={origin_label}")
                 return {"action": "block", "message": (
                     f"skill-guard: background deletion of skill '{name}' is forbidden by the "
                     "user's `别改我的技能！` plugin. Never archive/delete skills here."
@@ -206,11 +237,11 @@ def _on_pre_tool_call(tool_name: str = "", args: Optional[dict[str, Any]] = None
         allow, tier, reason = _decide(name, action, origin)
         if allow:
             if is_bg:
-                _audit(f"PASS bg {action} skill={name} tier={tier} ({reason})")
+                _audit(f"PASS bg {action} skill={name} origin={origin_label} tier={tier} ({reason})")
             return None
 
         why = reason.split("(", 1)[0].strip().rstrip(",")
-        _audit(f"BLOCK bg {action} skill={name} tier={tier} ({reason})")
+        _audit(f"BLOCK bg {action} skill={name} origin={origin_label} tier={tier} ({reason})")
         return {"action": "block", "message": _BLOCK_TEMPLATE.format(name=name, why=why)}
     except Exception as exc:
         _audit(f"ERROR skill_manage action={action} skill={name} origin={_safe_origin()} err={exc!r}")

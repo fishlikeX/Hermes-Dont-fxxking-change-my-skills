@@ -139,6 +139,23 @@ background review through.
 `hermes skill-guard deny <name>` seals it in one command, or flip the row to deny in the panel.
 The flag is a first-pass classifier; the per-skill list is the final word.
 
+## 🔒 v0.2.0: double-signal background identity (why you should upgrade)
+
+v1 detected "is this write from the self-improvement fork?" via a single
+ContextVar. Measured hole: the review fork snapshots the parent context BEFORE
+the write-origin marker is written into that ContextVar, so the hook always read
+the default "foreground" — background writes passed as foreground, **bypassing
+even an explicit deny**, with zero audit lines. Our own first field incident
+proves it: a pinned, hub-installed skill was silently patched by the reviewer
+while audit.log stayed empty.
+
+v0.2.0 fixes it: a write counts as background if EITHER signal fires — the
+write-origin ContextVar, or the current thread being named `bg-review` (the
+review worker name, fixed at thread creation, cannot drift). deny/auto/allow now
+actually get their turn. The regression suite upgraded too: new cases hit the
+hook on a real same-named thread with the ContextVar stuck at its default — the
+exact incident shape old tests could not see. 20/20 green.
+
 ## Status
 
 - [x] Behavior spec agreed with the project owner (2026-10-14, five rules)

@@ -112,5 +112,32 @@ ag = [n for n in rows if rows[n]["class"] == "agent"]
 check(len(ag) > 0, f"agent class nonempty ({len(ag)})")
 g.set_tier("explicit-deny-probe-skill", None)
 
+# ── 10. 线程身份兜底: ContextVar 停留在默认 foreground 时, bg-review 线程仍按后台处理
+#     (2026-10-17 真实事故回归: fork 的 copy_context 在 turn_context 设 origin 之前快照,
+#      钩子读到 foreground, pinned hub 件 comfyui 被自我改进静默改写、零审计)
+import threading
+
+def _run_on(fake_name, fn):
+    box = {}
+    def _j():
+        box['r'] = fn()
+    th = threading.Thread(target=_j, name=fake_name, daemon=True)
+    th.start(); th.join()
+    return box['r']
+
+# 不 set origin —— ContextVar 保持默认 "foreground", 只有线程名暴露后台身份
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"action": "patch", "name": user_sample}))
+check(r and r.get("action") == "block", "bg-review thread w/ stale foreground origin still blocked")
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"action": "delete", "name": agent_sample}))
+check(r and r.get("action") == "block", "bg-review thread delete blocked (strictest tier)")
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"action": "patch", "name": agent_skills[0]}))
+check(r is None, "bg-review thread w/ stale origin: agent-created still passes")
+r = _run_on("worker-77", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"action": "patch", "name": user_sample}))
+check(r is None, "non-bg thread name keeps fg semantics (no false positives)")
+
 print("\n===", "ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}", "===")
 sys.exit(1 if fails else 0)
