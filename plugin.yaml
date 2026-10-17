@@ -1,5 +1,5 @@
 name: dont-change-my-skills
-version: 0.2.0
+version: 0.2.1
 description: "Restores the skill-ownership guard (removed upstream by e3d2e57c9): the background self-improvement fork may only patch agent-created skills unless a skill is explicitly allowed. Sidebar UI + per-skill allow/deny list + CLI. Background identity is a double signal: write-origin ContextVar OR review-fork thread name."
 author: "fishlikeX"
 provides_hooks:

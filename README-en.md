@@ -156,6 +156,24 @@ actually get their turn. The regression suite upgraded too: new cases hit the
 hook on a real same-named thread with the ContextVar stuck at its default — the
 exact incident shape old tests could not see. 20/20 green.
 
+## 🔒 v0.2.1: batch operations are no longer a back door (v0.2.0 users, upgrade too)
+
+`skill_manage` accepts a batch shape: `operations=[{...}, {...}]` — no top-level
+`action`, no `name`. Both v1 and v0.2.0 hooks returned early at the "cannot tell
+which skill this targets" guard, so **a single batch call could write to any
+skill, bypassing the guard completely, again with zero audit lines**. Not a
+theoretical adversary: the day v0.2.0 shipped, our own background reviewer used
+this exact shape to append to a third-party skill while audit.log stayed empty.
+
+v0.2.1 fixes it: the hook now recognizes the batch shape and vetoes per operation,
+applying the same verdict as the equivalent single call (delete = every origin;
+deny list; user-owned skills in background; unnamed entries fail closed). Batches
+apply atomically, so blocking one operation blocks the whole call — matching the
+guard's semantics exactly. The regression suite grew to 26 cases, including the
+incident shape (bg thread + batch patch on a user-owned skill, mixed-batch atomic
+veto, unnamed-op fail-closed, foreground batches unaffected).
+
+
 ## Status
 
 - [x] Behavior spec agreed with the project owner (2026-10-14, five rules)

@@ -139,5 +139,40 @@ r = _run_on("worker-77", lambda: g._on_pre_tool_call(
     tool_name="skill_manage", args={"action": "patch", "name": user_sample}))
 check(r is None, "non-bg thread name keeps fg semantics (no false positives)")
 
+
+# ── 批量形态回归: skill_manage(operations=[...]) 顶层无 action/name ——
+# 真实事故 2026-10-17 05:02: bg review 用批量 patch 给用户所有的第三方 skill
+# 追加了三行, v1 与 v0.2.0 的钩子都在 `if not name` 处早退, 零审计。
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"operations": [{"action": "patch", "name": user_sample,
+                                    "old_string": "x", "new_string": "y"}]}))
+check(r and r.get("action") == "block", "bg-review batch patch user-owned blocked (05:02 incident shape)")
+
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"operations": [{"action": "patch", "name": agent_skills[0],
+                                    "old_string": "x", "new_string": "y"}]}))
+check(r is None, "bg-review batch patch agent-created passes")
+
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"operations": [
+        {"action": "patch", "name": agent_skills[0], "old_string": "x", "new_string": "y"},
+        {"action": "patch", "name": user_sample, "old_string": "x", "new_string": "y"}]}))
+check(r and r.get("action") == "block", "mixed batch vetoed atomically (one user-owned op kills call)")
+
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"operations": [{"action": "delete", "name": agent_sample}]}))
+check(r and r.get("action") == "block", "bg-review batch delete blocked (delete tier, every origin)")
+
+r = _run_on("bg-review", lambda: g._on_pre_tool_call(
+    tool_name="skill_manage", args={"operations": [{"action": "patch", "old_string": "x", "new_string": "y"}]}))
+check(r and r.get("action") == "block", "bg-review batch op w/o explicit name fails closed")
+
+# 前台批量: 用户指令语义, 放行且不写审计(与单发前台一致)
+r = g._on_pre_tool_call(tool_name="skill_manage",
+                        args={"operations": [{"action": "patch", "name": user_sample, "old_string": "x", "new_string": "y"}]})
+check(r is None, "foreground batch patch passes (user-directed)")
+
+# 空 operations / 非 list 防御: 不因批量分支误伤
+check(g._on_pre_tool_call(tool_name="skill_manage", args={"operations": []}) is None, "empty operations list untouched")
 print("\n===", "ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}", "===")
 sys.exit(1 if fails else 0)

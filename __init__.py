@@ -16,6 +16,11 @@ explicit deny (real incident 2026-10-17: a pinned hub skill was silently patched
 with zero audit lines). Thread identity is fixed at thread creation and cannot
 drift, so either signal flagging background is treated as background.
 
+Since 0.2.1 the hook also understands the BATCH shape ``operations=[...]`` (no
+top-level action/name) and vetoes it per operation — before 0.2.1 an unnamed
+batch slipped past the hook entirely, zero audit (real incident 2026-10-17
+05:02: the reviewer appended to a third-party user-owned skill through it).
+
 Verdict table (tier per skill, stored in guard.json):
 
     action          auto(default)              allow      deny
@@ -198,6 +203,45 @@ _BLOCK_TEMPLATE = (
 )
 
 
+def _vet_batch(ops, origin, origin_label, is_bg):
+    """skill_manage(operations=[...]) carries no top-level action/name, so the hook
+    saw an unnamed call and passed it through WITHOUT even auditing (real incident
+    2026-10-17 05:02: bg review appended lines to a third-party user-owned skill
+    through this shape). Expand it here: every op faces the same verdict as the
+    equivalent single call. The tool applies batches atomically, so vetoing one op
+    vetoes the whole call."""
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            continue
+        oname = str(op.get("name") or "").strip()
+        oact = op.get("action")
+        if not oname:
+            if is_bg or oact == "delete":
+                _audit(f"BLOCK batch[{i}] action={oact} skill=<unnamed> origin={origin_label} (unnamed op fails closed)")
+                return {"action": "block", "message": (
+                    f"skill-guard: batch operation [{i}] ({oact}) carries no explicit skill name, "
+                    "so the guard cannot classify the target. Background writes and deletes are "
+                    "refused here; name every operation explicitly."
+                )}
+            continue
+        if oact == "delete":
+            _audit(f"BLOCK batch[{i}] delete skill={oname} origin={origin_label} (delete tier, every origin)")
+            return {"action": "block", "message": (
+                f"skill-guard: skill_manage(delete) on '{oname}' is disabled by the "
+                "`别改我的技能！` plugin (delete = most restricted tier). If the user truly "
+                "wants it gone, they remove the folder via terminal or `hermes skills uninstall`."
+            )}
+        if oact not in _CONTENT_ACTIONS:
+            continue
+        allow, tier, reason = _decide(oname, oact, origin)
+        if not allow:
+            why = reason.split("(", 1)[0].strip().rstrip(",")
+            _audit(f"BLOCK bg batch[{i}] {oact} skill={oname} origin={origin_label} tier={tier} ({reason})")
+            return {"action": "block", "message": _BLOCK_TEMPLATE.format(name=oname, why=why)}
+        if is_bg:
+            _audit(f"PASS bg batch[{i}] {oact} skill={oname} origin={origin_label} tier={tier} ({reason})")
+    return None
+
 # -------------------------------------------------------------------- hook
 
 def _on_pre_tool_call(tool_name: str = "", args: Optional[dict[str, Any]] = None, **_kw: Any):
@@ -207,7 +251,10 @@ def _on_pre_tool_call(tool_name: str = "", args: Optional[dict[str, Any]] = None
         return None
     action = args.get("action")
     name = str(args.get("name") or "").strip()
-    if not name:
+    batch_ops = args.get("operations") if not name else None
+    if not isinstance(batch_ops, list) or not batch_ops:
+        batch_ops = None
+    if not name and not batch_ops:
         return None
 
     try:
@@ -215,6 +262,9 @@ def _on_pre_tool_call(tool_name: str = "", args: Optional[dict[str, Any]] = None
         thread_bg = _thread_is_bg()
         is_bg = origin == _background_sentinel() or thread_bg
         origin_label = origin + ("+thread" if thread_bg and origin != _background_sentinel() else "")
+
+        if batch_ops:
+            return _vet_batch(batch_ops, origin, origin_label, is_bg)
 
         # ---- delete: strictest tier, every origin ----
         if action == "delete":
