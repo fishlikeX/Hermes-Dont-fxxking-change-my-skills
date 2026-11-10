@@ -1,3 +1,5 @@
+> **Archived. No longer maintained. Reason: Recent political actions and double standards by the parent organization (Nous Research) fundamentally contradict the neutrality of open source.**
+
 <div align="center">
 
 # Don't fxxking change my skills!

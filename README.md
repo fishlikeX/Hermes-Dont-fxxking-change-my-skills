@@ -1,3 +1,5 @@
+> **已归档，不再维护。原因：母公司近期带有政治倾向的双标行为，严重违背了开源的中立精神。**
+
 <div align="center">
 
 # 别改我的技能！ · Dont fxxking change my skills!
